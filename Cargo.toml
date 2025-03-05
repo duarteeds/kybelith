@@ -1,0 +1,63 @@
+﻿[package]
+name = "kybelith"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rand = { version = "0.8", features = ["std"] }
+sha3 = "0.10"
+clap = { version = "4.0", features = ["derive"] }
+wasmer = "2.3.0"
+wasmer-compiler-cranelift = "2.3.0"
+hex = "0.4"
+oqs = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+openssl-sys = { version = "0.9", features = [] }  
+openssl = { version = "0.10", features = [] }     
+reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"] }
+pqcrypto-dilithium = "0.5.0"
+pqcrypto-traits = "0.3"
+pqcrypto = "0.5.0"
+thiserror = "1.0"
+log = "0.4"
+bincode = "1.3"
+rusqlite = { version = "0.29.0", features = ["bundled"] }
+secrecy = "0.8"
+anyhow = "1.0"
+blockchain = "0.9.2"
+simplelog = "0.12"	
+time = { version = "0.3", features = ["formatting", "macros"] }
+parking_lot = "0.12"
+base64 = "0.21"
+sodiumoxide = "0.2.7"
+regex = "1.10"
+constant_time_eq = "0.2"
+zeroize = { version = "1.6", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+once_cell = "1.8"
+subtle = "2.4"
+env_logger = "0.10"
+tokio = { version = "1.28", features = ["full", "macros", "rt-multi-thread"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.3", features = ["v4"] }
+criterion = "0.3"
+chacha20poly1305 = "0.10.1"
+flate2 = "1.0"
+semver = "1.0"
+
+
+
+[profile.dev]   # Modo Debug
+opt-level = 0   # Nível de otimização (0 = sem otimizações)
+debug = true    # Inclui símbolos de depuração
+
+[profile.dev.build-override]
+opt-level = 3
+
+[profile.release]
+opt-level = 3       # Nível de otimização (3 = máximo)
+debug = false       # Remove símbolos de depuração
+lto = true          # Ativa Link-Time Optimization (otimização adicional)
+

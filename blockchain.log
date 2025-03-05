@@ -1,0 +1,9 @@
+%Y-%m-%d %H:%M:%S [INFO] Iniciando aplicação blockchain quântica
+%Y-%m-%d %H:%M:%S [INFO] Adicionado saldo inicial de 1,000,000 KYBL ao administrador: 0x123...
+%Y-%m-%d %H:%M:%S [INFO] Chaves do administrador registradas com sucesso: 0x123...
+%Y-%m-%d %H:%M:%S [INFO] Token criado: MyToken (MTK)
+%Y-%m-%d %H:%M:%S [INFO] Token personalizado criado: CustomToken (CTK)
+%Y-%m-%d %H:%M:%S [INFO] Distribuição de taxa: Queima: 0 KYBL, Staking: 0 KYBL, Dev: 0 KYBL, Liquidez: 1 KYBL
+%Y-%m-%d %H:%M:%S [INFO] Transferência de 1000 tokens (ID: 1) para 0x456.... Taxa: 1 KYBL
+%Y-%m-%d %H:%M:%S [INFO] Transferência realizada com sucesso e verificada
+%Y-%m-%d %H:%M:%S [INFO] Aplicação iniciada com sucesso
