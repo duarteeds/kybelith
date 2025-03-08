@@ -162,6 +162,7 @@ pub fn send_block_proposal(network: &mut NetworkManager, block: Vec<u8>) {
         sender: "local_node_id".to_string(),
         message_type: MessageType::BlockProposal,
         payload: block,
+        is_compressed: false, 
     };
     if let Err(e) = network.broadcast_message(message) {
     error!("Falha ao transmitir mensagem: {}", e);

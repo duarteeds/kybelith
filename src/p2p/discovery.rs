@@ -123,7 +123,32 @@ impl EnhancedNodeDiscovery {
     } // Este escopo garante que o lock seja liberado
     self
 }
+
+pub fn find_nodes_with_service(&self, service: &str) -> Vec<NodeInfo> {
+        let nodes = self.nodes.read().unwrap();
+        let mut result = Vec::new();
+        
+        for (_id, node) in nodes.iter() {
+            if node.services.contains(service) {
+                result.push(node.node_info.clone());
+            }
+        }
+        
+        result
+    }
     
+    // Verificar se um nó tem versão compatível
+    pub fn is_compatible_version(&self, node_id: &NodeId, min_version: &str) -> bool {
+        let nodes = self.nodes.read().unwrap();
+        
+        if let Some(node) = nodes.get(node_id) {
+            // Comparação simples de versão (em produção usar semver)
+            return node.protocol_version.as_str() >= min_version;
+        }
+        
+        false
+    }
+
     // Set connection verifier
     pub fn with_verifier<F>(mut self, verifier: F) -> Self
     where
@@ -625,6 +650,7 @@ pub fn ban_peers(&self, peer_ids: &[NodeId]) -> usize {
                         sender: network.as_ref().local_id().clone(),
                         message_type: MessageType::DiscoveryRequest,
                         payload: Vec::new(),
+                        is_compressed: false,
                     };
                     
                     // Send request

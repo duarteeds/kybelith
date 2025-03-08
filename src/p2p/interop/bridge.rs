@@ -24,6 +24,10 @@ pub enum BlockchainProtocol {
     Ethereum,
     Polkadot,
     Cosmos,
+    Cardano,          
+    BinanceSmartChain, 
+    Solana,           
+    Avalanche, 
     // Adicione mais protocolos conforme necessário
 }
 
@@ -107,6 +111,8 @@ pub struct BridgeManager {
     message_callback: Arc<Mutex<Option<Box<dyn Fn(CrossChainMessage) -> Result<(), String> + Send + Sync>>>>,
     signing_keys: Mutex<(Vec<u8>, Vec<u8>)>, //
     private_key: Mutex<Option<Vec<u8>>>, // 
+    chain_public_keys: RwLock<HashMap<String, (Vec<u8>, u64)>>, // (chave_pública, timestamp)
+
 }
 
 impl BridgeManager {
@@ -133,7 +139,23 @@ impl BridgeManager {
         message_callback: Arc::new(Mutex::new(None)),
         signing_keys: Mutex::new((public_key_vec, private_key_vec)),
         private_key: Mutex::new(None),
+        chain_public_keys: RwLock::new(HashMap::new()),
     })
+}
+
+pub fn set_message_handler<F>(&mut self, handler: F)
+where
+    F: Fn(CrossChainMessage) -> Result<(), String> + Send + Sync + 'static,
+{
+    let mut callback = self.message_callback.lock().unwrap();
+    *callback = Some(Box::new(handler));
+}
+
+/// Obtém informações sobre todas as bridges
+pub fn get_bridges_info(&self) -> Vec<ExternalChainInfo> {
+    self.bridges.values()
+        .map(|bridge| bridge.get_chain_info())
+        .collect()
 }
 
     pub fn integrate_with_network(&mut self, network: Arc<Mutex<SecureNetworkManager>>) -> Result<(), String> {
@@ -278,10 +300,10 @@ impl BridgeManager {
             .map_err(|e| format!("Falha ao serializar mensagem para assinatura: {}", e))?;
         
         // Assinar usando Dilithium com nossa chave privada
-        let (_, private_key) = *self.signing_keys.lock().unwrap();
+        let (_, private_key) = self.signing_keys.lock().unwrap().clone();
         
-        let signature = self.dilithium.sign(&message_bytes, private_key)
-            .map_err(|e| format!("Falha ao assinar mensagem: {}", e))?;
+        let signature = self.dilithium.sign(&message_bytes, &private_key)
+    .map_err(|e| format!("Falha ao assinar mensagem: {}", e))?;
         
         // Adicionar assinatura à mensagem
         message.signature = signature.to_vec();
@@ -337,48 +359,66 @@ impl BridgeManager {
     }
 
     // Método auxiliar para obter chave pública de uma blockchain
-    fn get_chain_public_key(&self, chain_name: &str) -> Result<Vec<u8>, String> {
-        // Em uma implementação real, buscar de um armazenamento seguro
-        // Aqui, apenas simulamos diferentes chaves para diferentes cadeias
-        
-        match chain_name {
-            "Ethereum" => Ok(vec![1u8; 32]),
-            "Polkadot" => Ok(vec![2u8; 32]),
-            "Cosmos" => Ok(vec![3u8; 32]),
-            "Bitcoin" => Ok(vec![4u8; 32]),
-            "Kybelith" => {
-                // Usar nossa própria chave pública
-                Ok(self.signing_keys.lock().unwrap().0.clone())
-            },
-            _ => Err(format!("Chave pública não disponível para blockchain '{}'", chain_name)),
-        }
+    pub fn get_chain_public_key(&self, chain_name: &str) -> Result<Vec<u8>, String> {
+    // Verificar primeiro no nosso mapa de chaves atualizadas
+    let keys = match self.chain_public_keys.read() {
+        Ok(guard) => guard,
+        Err(e) => return Err(format!("Falha ao ler chaves públicas: {}", e)),
+    };
+    
+    if let Some((key, _)) = keys.get(chain_name) {
+        return Ok(key.clone());
     }
+    
+    // Cair para chaves default se não encontrarmos no mapa
+    match chain_name {
+        "Ethereum" => Ok(vec![1u8; 32]), // Placeholder
+        "Polkadot" => Ok(vec![2u8; 32]), // Placeholder
+        "Cosmos" => Ok(vec![3u8; 32]),   // Placeholder
+        "Bitcoin" => Ok(vec![4u8; 32]),  // Placeholder
+        "Kybelith" => {
+            // Usar nossa própria chave pública
+            let keys = match self.signing_keys.lock() {
+                Ok(guard) => guard,
+                Err(e) => return Err(format!("Falha ao obter lock das chaves: {}", e)),
+            };
+            Ok(keys.0.clone())
+        },
+        _ => Err(format!("Chave pública não disponível para blockchain '{}'", chain_name)),
+    }
+}
 
     // Método para inicializar rotação de chaves periódica
-    pub fn start_key_rotation_scheduler(&self, interval_mins: u64) -> Result<(), String> {
+    pub fn start_key_rotation_scheduler(self: Arc<Self>, interval_mins: u64) -> Result<(), String> {
         let chain_name = self.get_chain_name();
-    let interval = interval_mins;
+        let interval = interval_mins;
+        let bridge_clone = Arc::clone(&self);
 
-std::thread::spawn(move || {
-    loop {
-                
-                std::thread::sleep(Duration::from_secs(interval * 60));
-            info!("Scheduled key rotation for {}", chain_name);
-    
+        thread::spawn(move || {
+            info!("Iniciando scheduler de rotação de chaves para {}", chain_name);
+            loop {
+                thread::sleep(Duration::from_secs(interval * 60));
+                info!("Executando rotação programada de chaves para {}", chain_name);
+                if let Err(e) = bridge_clone.rotate_keys() {
+                    error!("Falha na rotação de chaves: {}", e);
+                } else {
+                    info!("Rotação de chaves concluída com sucesso para {}", chain_name);
+                }
             }
         });
-        
+
         Ok(())
     }
 
-    fn rotate_keys(&self) -> Result<(), String> {
+
+  pub  fn rotate_keys(&self) -> Result<(), String> {
     let (new_public_key, new_private_key) = self.dilithium.keypair()
-        .map_err(|e| format!("Falha ao gerar novo par de chaves: {}", e.into()))?;
+        .map_err(|e| format!("Falha ao gerar novo par de chaves: {}", e.to_string()))?;
 
     let mut keys = self.signing_keys.lock()
         .map_err(|e| format!("Falha ao obter lock das chaves: {}", e))?;
     keys.0 = new_public_key;
-    keys.1 = new_private_key;
+    keys.1 = new_private_key.clone();
 
     let mut priv_key = self.private_key.lock()
         .map_err(|e| format!("Falha ao obter lock da chave privada: {}", e))?;
@@ -408,48 +448,153 @@ std::thread::spawn(move || {
 
     /// Processa uma mensagem recebida da blockchain externa
     pub fn process_received_message(&self, chain_name: &str, message: CrossChainMessage) -> Result<(), String> {
-        // Primeiro, processa a mensagem na bridge específica
-        if let Some(bridge) = self.bridges.get(chain_name) {
-            bridge.process_received_message(message.clone())?;
-        } else {
-            return Err(format!("Bridge para '{}' não encontrada", chain_name));
+    // Verificar tamanho máximo da mensagem para evitar ataques DoS
+    if message.payload.len() > Self::MAX_MESSAGE_SIZE {
+        return Err(format!(
+            "Mensagem de tamanho excessivo de '{}': {} bytes (máximo permitido: {} bytes)",
+            chain_name, 
+            message.payload.len(), 
+            Self::MAX_MESSAGE_SIZE
+        ));
+    }
+
+    // Verificar timestamp para evitar ataques de replay
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    // Rejeitar mensagens muito antigas (mais de 10 minutos) ou no futuro
+    if message.timestamp > now + 60 {
+        return Err(format!("Mensagem do futuro rejeitada de '{}': timestamp {} é {} segundos no futuro",
+            chain_name, message.timestamp, message.timestamp - now));
+    }
+    
+    if now - message.timestamp > 600 {  // 10 minutos
+        return Err(format!("Mensagem antiga rejeitada de '{}': timestamp {} é mais de 10 minutos atrás",
+            chain_name, message.timestamp));
+    }
+    
+    // Verificar assinatura da mensagem
+    match self.verify_message(&message) {
+        Ok(valid) => {
+            if !valid {
+                return Err(format!("Assinatura inválida para mensagem de '{}'", chain_name));
+            }
+        },
+        Err(e) => {
+            return Err(format!("Falha ao verificar assinatura de mensagem de '{}': {}", chain_name, e));
+        }
+    }
+    
+    // Processamento para tipos especiais de mensagem
+    match &message.message_type {
+        CrossChainMessageType::Custom(custom_type) if custom_type == "key_rotation" => {
+            info!("Recebida mensagem de rotação de chave de '{}'", chain_name);
+            // Atualizar a chave pública armazenada para esta cadeia
+            // Implementação depende de onde você armazena as chaves públicas das blockchains
+            return self.process_key_rotation(chain_name, &message.payload);
+        },
+        _ => {
+            // Processamento padrão para outros tipos de mensagem
+        }
+    }
+
+    // Processar a mensagem na bridge específica
+    if let Some(bridge) = self.bridges.get(chain_name) {
+        bridge.process_received_message(message.clone())?;
+    } else {
+        return Err(format!("Bridge para '{}' não encontrada", chain_name));
+    }
+    
+    // Chamar o callback global se estiver configurado
+    let callback = self.message_callback.lock()
+        .map_err(|e| format!("Falha ao adquirir lock do callback: {}", e))?;
+    
+    match &*callback {
+        Some(handler) => handler(message),
+        None => {
+            warn!("Nenhum handler configurado para mensagens entre blockchains");
+            Ok(())
+        }
+    }
+}
+
+fn process_key_rotation(&self, chain_name: &str, key_data: &[u8]) -> Result<(), String> {
+    // Deserializar a nova chave pública
+    let new_public_key: Vec<u8> = match bincode::deserialize(key_data) {
+        Ok(key) => key,
+        Err(e) => {
+            error!("Falha ao deserializar chave pública de '{}': {}", chain_name, e);
+            return Err(format!("Formato de chave inválido de '{}': {}", chain_name, e));
+        }
+    };
+    
+    // Validar tamanho e formato da chave
+    if new_public_key.len() < 32 {
+        return Err(format!("Chave pública de '{}' muito curta: {} bytes", 
+            chain_name, new_public_key.len()));
+    }
+    
+    // Obter timestamp atual
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    // Adquirir lock de escrita
+    let mut keys = match self.chain_public_keys.write() {
+        Ok(guard) => guard,
+        Err(e) => {
+            error!("Falha ao adquirir lock de escrita para chaves públicas: {}", e);
+            return Err(format!("Erro interno ao atualizar chave pública: {}", e));
+        }
+    };
+    
+    // Verificar se já temos uma chave para esta blockchain
+    if let Some((old_key, old_timestamp)) = keys.get(chain_name) {
+        // Verificar se a nova chave é diferente
+        if *old_key == new_public_key {
+            info!("Chave pública para '{}' já está atualizada", chain_name);
+            return Ok(());
         }
         
-        // Depois, chama o callback global se estiver configurado
-        let callback = self.message_callback.lock().unwrap();
-        match &*callback {
-            Some(handler) => handler(message),
-            None => {
-                warn!("Nenhum handler configurado para mensagens entre blockchains");
-                Ok(())
-            }
+        // Verificar se o timestamp é mais recente
+        if *old_timestamp >= current_time {
+            warn!("Tentativa de instalar chave mais antiga para '{}', rejeitando", chain_name);
+            return Err(format!("Timestamp de chave inválido para '{}'", chain_name));
         }
+        
+        // Registrar a mudança de chave para auditoria
+        info!("Atualizando chave pública para '{}': {} bytes → {} bytes",
+            chain_name, old_key.len(), new_public_key.len());
+    } else {
+        info!("Instalando nova chave pública para '{}': {} bytes", 
+            chain_name, new_public_key.len());
     }
+    
+    // Armazenar a nova chave com timestamp
+    keys.insert(chain_name.to_string(), (new_public_key, current_time));
+    
+    // Calcular hash da chave para auditoria
+    use sha3::{Digest, Sha3_256};
+    let mut hasher = Sha3_256::new();
+    if let Some((key, _)) = keys.get(chain_name) {
+        hasher.update(key);
+        let key_hash = hasher.finalize();
+        
+        info!("Chave pública para '{}' atualizada com sucesso. Hash: {:?}", 
+            chain_name, hex::encode(&key_hash[0..8]));
+    }
+    
+    // Em uma implementação completa, você pode querer:
+    // 1. Notificar outras bridges sobre a atualização de chave
+    // 2. Atualizar qualquer cache ou estrutura de dados em memória
+    // 3. Persistir as chaves em armazenamento seguro
+    
+    Ok(())
+}
 
-    /// Define o callback para processar mensagens recebidas
-    pub fn set_message_handler<F>(&mut self, handler: F)
-    where
-        F: Fn(CrossChainMessage) -> Result<(), String> + Send + Sync + 'static,
-    {
-        let mut callback = self.message_callback.lock().unwrap();
-        *callback = Some(Box::new(handler));
-    }
-
-    /// Obtém informações sobre todas as bridges
-    pub fn get_bridges_info(&self) -> Vec<ExternalChainInfo> {
-        self.bridges.values()
-            .map(|bridge| bridge.get_chain_info())
-            .collect()
-    }
-
-    /// Verifica o status de uma bridge específica
-    pub fn check_bridge_status(&self, chain_name: &str) -> Result<ConnectionStatus, String> {
-        if let Some(bridge) = self.bridges.get(chain_name) {
-            Ok(bridge.get_status())
-        } else {
-            Err(format!("Bridge para '{}' não encontrada", chain_name))
-        }
-    }
 }
 
 /// Dados para o handshake inicial

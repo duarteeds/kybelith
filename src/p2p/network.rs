@@ -18,6 +18,7 @@ use crate::crypto::dilithium::Dilithium5;
 use serde::{Serialize, Deserialize};
 use crate::p2p::interop::bridge::CrossChainMessage;
 
+
 impl Clone for SecureNetworkManager {
     fn clone(&self) -> Self {
         let listener_clone = self.listener.try_clone().expect("Failed to clone TCP listener");
@@ -768,6 +769,7 @@ fn extract_peer_info_from_handshake(handshake_data: &[u8]) -> Result<NodeInfo, B
             sender: local_id.clone(),
             message_type: MessageType::KeyRotation,
             payload: new_payload,
+            is_compressed: false,
         },
         &nodes,
         &metrics,
@@ -955,6 +957,7 @@ trace!("Received message type {:?} from {}", message.message_type, peer_id);
                     sender: local_id.clone(),
                     message_type: MessageType::DiscoveryResponse,
                     payload: response_payload,
+                    is_compressed: false,
                 };
                 
                 // Queue response
@@ -1018,6 +1021,7 @@ trace!("Received message type {:?} from {}", message.message_type, peer_id);
                     sender: local_id.clone(),
                     message_type: MessageType::HeartbeatResponse,
                     payload: message.payload,  // Echo back the same payload
+                    is_compressed: false,
                 };
                 
                 Self::queue_message_to_peer(
@@ -1280,8 +1284,8 @@ trace!("Received message type {:?} from {}", message.message_type, peer_id);
     Ok(())
 }
 
-    // Adicione esta função utilitária em network.rs
-fn compress_message(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    
+pub fn compress_message(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     use flate2::{Compress, Compression};
     let mut compressor = Compress::new(Compression::default(), true);
     let mut compressed = Vec::with_capacity(data.len());
@@ -1293,18 +1297,21 @@ fn compress_message(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> 
     }
 }
 
-// E a descompressão:
-fn decompress_message(data: &[u8], original_was_compressed: bool) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    if !original_was_compressed {
-        return Ok(data.to_vec());
+
+ pub fn decompress_message(&self, data: &[u8], original_was_compressed: bool) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        if original_was_compressed {
+            // Use uma biblioteca de compressão, como `flate2`, para descomprimir os dados
+            let mut decoder = flate2::read::ZlibDecoder::new(data);
+            let mut decompressed = Vec::new();
+            decoder.read_to_end(&mut decompressed)?;
+            Ok(decompressed)
+        } else {
+            // Se a mensagem não foi comprimida, retorne os dados originais
+            Ok(data.to_vec())
+        }
     }
-    use flate2::{Decompress, FlushDecompress};
-    let mut decompressor = Decompress::new(true);
-    let mut decompressed = Vec::with_capacity(data.len() * 2);
-    decompressor.decompress_vec(data, &mut decompressed, FlushDecompress::Finish)?;
-    Ok(decompressed)
-}
-    
+
+  
     // Start heartbeat service
     fn start_heartbeat_service(&self) -> Result<(), Box<dyn std::error::Error>> {
         let nodes = Arc::clone(&self.nodes);
@@ -1332,6 +1339,7 @@ fn decompress_message(data: &[u8], original_was_compressed: bool) -> Result<Vec<
                     sender: local_id.clone(),
                     message_type: MessageType::Heartbeat,
                     payload: timestamp_bytes,
+                    is_compressed: false,
                 };
                 
                 // Get connected peers
@@ -1645,6 +1653,7 @@ pub fn broadcast_message(&self, message: Message) -> Result<usize, Box<dyn std::
         sender: self.local_id.clone(),
         message_type: MessageType::CrossChainRequest,
         payload,
+        is_compressed: false,
     };
     
     // Broadcast para a rede
